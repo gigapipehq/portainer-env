@@ -1,0 +1,28 @@
+{
+  "version": "3",
+  "templates": [
+  {
+    "id": 1,
+    "type": 3,
+    "title": "Nginx Custom Page",
+    "description": "A simple Nginx container that serves a page with a predefined message on a user-specified port.",
+    "name": "nginx-custom-page",
+    "logo": "https://raw.githubusercontent.com/portainer/templates/master/logos/nginx.png",
+    "platform": "linux",
+    "categories": [
+      "Web"
+    ],
+    "repository": {
+      "url": "http://192.168.122.44:8080/",
+      "stackfile": "stack.yaml"
+    },
+    "env": [
+      {
+        "name": "PORT",
+        "label": "Host Port",
+        "default": "8080"
+      }
+    ]
+  }
+]
+}
