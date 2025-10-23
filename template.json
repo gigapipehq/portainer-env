@@ -1,28 +1,68 @@
 {
-  "version": "3",
+  "version": "2",
   "templates": [
-  {
-    "id": 1,
-    "type": 3,
-    "title": "Nginx Custom Page",
-    "description": "A simple Nginx container that serves a page with a predefined message on a user-specified port.",
-    "name": "nginx-custom-page",
-    "logo": "https://raw.githubusercontent.com/portainer/templates/master/logos/nginx.png",
-    "platform": "linux",
-    "categories": [
-      "Web"
-    ],
-    "repository": {
-      "url": "http://192.168.122.44:8080/",
-      "stackfile": "stack.yaml"
-    },
-    "env": [
-      {
-        "name": "PORT",
-        "label": "Host Port",
-        "default": "8080"
-      }
-    ]
-  }
-]
+    {
+      "type": 3,
+      "title": "Gigapipe Monitoring Stack",
+      "description": "A full monitoring stack with Grafana, ClickHouse, and Gigapipe reader/writer services.",
+      "name": "gigapipe-stack",
+      "logo": "https://raw.githubusercontent.com/portainer/templates/master/logos/grafana.png",
+      "platform": "linux",
+      "categories": ["Monitoring", "Database"],
+      "repository": {
+        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "stackfile": "stack.yaml"
+      },
+      "env": [
+        {
+          "name": "CLICKHOUSE_DATA_PATH",
+          "label": "ClickHouse Data Path",
+          "description": "Absolute path on the host to store ClickHouse data.",
+          "default": "/var/data/clickhouse"
+        },
+        {
+          "name": "CLICKHOUSE_USER",
+          "label": "ClickHouse User",
+          "description": "The username for the ClickHouse database. This should almost always be 'default'.",
+          "default": "default"
+        },
+        {
+          "name": "CLICKHOUSE_PASSWORD",
+          "label": "ClickHouse Password",
+          "description": "The password for the ClickHouse user. Change this to a secure password.",
+          "default": "changeme"
+        },
+        {
+          "name": "GRAFANA_PORT",
+          "label": "Grafana Port",
+          "description": "Host port to access the Grafana UI.",
+          "default": "3000"
+        },
+        {
+          "name": "GRAFANA_ADMIN_USER",
+          "label": "Grafana Admin User",
+          "default": "admin"
+        },
+        {
+          "name": "GRAFANA_ADMIN_PASSWORD",
+          "label": "Grafana Admin Password",
+          "description": "Set a secure password for the Grafana admin user.",
+          "default": "changeme"
+        },
+        {
+          "name": "WRITER_PORT",
+          "label": "Gigapipe Writer Port",
+          "description": "Host port for the Gigapipe writer service.",
+          "default": "3103"
+        },
+        {
+          "name": "READER_PORT",
+          "label": "Gigapipe Reader Port",
+          "description": "Host port for the Gigapipe reader service.",
+          "default": "3102"
+        }
+      ]
+    }
+  ]
 }
+
