@@ -1,13 +1,83 @@
-version: '3.8'
+version: "3.8"
+
+networks:
+  monitoring-net:
+    driver: bridge
 
 services:
-  nginx:
-    image: nginx:latest
+  # Grafana for data visualization
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
     restart: unless-stopped
     ports:
-      - "{{ PORT }}:80"
-    command: >
-      sh -c '
-        echo "<!DOCTYPE html><html><head><title>Welcome to Nginx!</title></head><body><h1>Hello from my Nginx container!</h1><p>This page is served by the Nginx container deployed via a Portainer template.</p></body></html>" > /usr/share/nginx/html/index.html &&
-        nginx -g "daemon off;"
-      '
+      - "${GRAFANA_PORT}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - monitoring-net
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+
+  # ClickHouse database, configured to create a user from template variables
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-server
+    hostname: clickhouse-server
+    restart: unless-stopped
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native client interface
+    volumes:
+      - ${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse
+    networks:
+      - monitoring-net
+    environment:
+      # Explicitly create a user with the specified name and password
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # Gigapipe service in "writer" mode
+  gigapipe-writer:
+    image: gigapipe:latest
+    container_name: gigapipe-writer
+    hostname: gigapipe-writer
+    restart: unless-stopped
+    ports:
+      - "${WRITER_PORT}:9080"
+    networks:
+      - monitoring-net
+    environment:
+      CLICKHOUSE_SERVER: "clickhouse-server"
+      CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      PORT: "9080"
+      MODE: "writer"
+    depends_on:
+      - clickhouse
+
+  # Gigapipe service in "reader" mode
+  gigapipe-reader:
+    image: gigapipe:latest
+    container_name: gigapipe-reader
+    hostname: gigapipe-reader
+    restart: unless-stopped
+    ports:
+      - "${READER_PORT}:9080"
+    networks:
+      - monitoring-net
+    environment:
+      CLICKHOUSE_SERVER: "clickhouse-server"
+      CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      PORT: "9080"
+      MODE: "reader"
+    depends_on:
+      - clickhouse
+
+volumes:
+  grafana-data:
+
