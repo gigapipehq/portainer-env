@@ -20,7 +20,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
-  # ClickHouse database, configured to create a user from template variables
+  # ClickHouse database
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-server
@@ -34,13 +34,34 @@ services:
     networks:
       - monitoring-net
     environment:
-      # Explicitly create a user with the specified name and password
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
+    # Add a healthcheck so other services can wait for it to be ready
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # New service to initialize the database schema and then exit
+  gigapipe-init:
+    image: gigapipe:latest
+    container_name: gigapipe-init
+    restart: "no" # Do not restart this container; it's a one-shot task
+    networks:
+      - monitoring-net
+    environment:
+      CLICKHOUSE_SERVER: "clickhouse-server"
+      CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      PORT: "9080"
+      MODE: "init_only"
+    depends_on:
+      clickhouse:
+        condition: service_healthy # Wait for ClickHouse to pass its healthcheck
 
   # Gigapipe service in "writer" mode
   gigapipe-writer:
@@ -58,7 +79,9 @@ services:
       PORT: "9080"
       MODE: "writer"
     depends_on:
-      - clickhouse
+      gigapipe-init:
+        # Wait for the init container to complete successfully (exit code 0)
+        condition: service_completed_successfully
 
   # Gigapipe service in "reader" mode
   gigapipe-reader:
@@ -76,8 +99,9 @@ services:
       PORT: "9080"
       MODE: "reader"
     depends_on:
-      - clickhouse
+      gigapipe-init:
+        # Also wait for the init container to complete successfully
+        condition: service_completed_successfully
 
 volumes:
   grafana-data:
-
