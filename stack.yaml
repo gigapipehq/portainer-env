@@ -2,7 +2,6 @@ version: "3.8"
 
 volumes:
   grafana-data: {}
-  # You no longer need bootstrap-scripts, but you do need a volume for clickhouse data
   clickhouse-data: {}
 
 networks:
@@ -10,7 +9,7 @@ networks:
     driver: bridge
 
 services:
-  # Grafana for data visualization
+  # Grafana (unchanged)
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
@@ -25,7 +24,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
-  # ClickHouse database with conditional S3 storage
+  # ClickHouse database with corrected entrypoint
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-server
@@ -35,7 +34,6 @@ services:
       - "8123:8123"
       - "9000:9000"
     volumes:
-      # Use a named volume instead of a host path for clickhouse data
       - clickhouse-data:/var/lib/clickhouse
     networks:
       - monitoring-net
@@ -52,7 +50,6 @@ services:
         soft: 262144
         hard: 262144
     entrypoint:
-      # This multi-line script runs before the original entrypoint
       - /bin/sh
       - -c
       - |
@@ -64,6 +61,7 @@ services:
             echo "S3 credentials found. Generating S3 storage configuration."
             
             # Use a heredoc to create the storage configuration file
+            # Backslashes MUST be double-escaped (\\) for YAML multi-line strings
             cat > "$CONFIG_FILE" <<EOF
         <clickhouse>
           <storage_configuration>
@@ -73,9 +71,9 @@ services:
                 </default>
                 <s3_storage>
                     <type>s3</type>
-                    <endpoint>https://\${S3_HOST}/\${S3_BUCKET}/\${S3_PREFIX:-}</endpoint>
-                    <access_key_id>\${S3_KEY}</access_key_id>
-                    <secret_access_key>\${S3_SECRET}</secret_access_key>
+                    <endpoint>\\${S3_HOST}/\\${S3_BUCKET}/\\${S3_PREFIX:-}</endpoint>
+                    <access_key_id>\\${S3_KEY}</access_key_id>
+                    <secret_access_key>\\${S3_SECRET}</secret_access_key>
                     <metadata_path>/var/lib/clickhouse/s3_metadata/</metadata_path>
                     <cache_enabled>true</cache_enabled>
                     <data_cache_enabled>true</data_cache_enabled>
@@ -119,7 +117,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Gigapipe service in "init" mode
+  # Gigapipe services (unchanged)
   gigapipe-init:
     image: ghcr.io/metrico/gigapipe:v4.0.21
     container_name: gigapipe-init
@@ -135,10 +133,8 @@ services:
       clickhouse:
         condition: service_healthy
 
-  # Gigapipe writer and reader services (unchanged from your version)
   gigapipe-writer:
     image: ghcr.io/metrico/gigapipe:v4.0.21
-    # ...
     container_name: gigapipe-writer
     hostname: gigapipe-writer
     restart: unless-stopped
@@ -157,7 +153,6 @@ services:
 
   gigapipe-reader:
     image: ghcr.io/metrico/gigapipe:v4.0.21
-    # ...
     container_name: gigapipe-reader
     hostname: gigapipe-reader
     restart: unless-stopped
