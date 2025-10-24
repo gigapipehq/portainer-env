@@ -20,7 +20,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
-  # ClickHouse database
+  # ClickHouse database with conditional S3 storage
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     container_name: clickhouse-server
@@ -31,16 +31,25 @@ services:
       - "9000:9000" # Native client interface
     volumes:
       - ${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse
+      # Mount the bootstrap scripts into the container
+      - ./clickhouse_bootstrap:/clickhouse_bootstrap
     networks:
       - monitoring-net
     environment:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      # S3 Credentials - leave these blank to disable S3 storage
+      S3_HOST: ${S3_HOST:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_KEY: ${S3_KEY:-}
+      S3_SECRET: ${S3_SECRET:-}
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
-    # Add a healthcheck so other services can wait for it to be ready
+    # Override the default entrypoint to run our setup script first
+    entrypoint: /clickhouse_bootstrap/entrypoint.sh
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s
