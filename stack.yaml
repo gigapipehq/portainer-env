@@ -1,5 +1,9 @@
 version: "3.8"
 
+volumes:
+  grafana-data: {}
+  bootstrap-scripts: {}
+
 networks:
   monitoring-net:
     driver: bridge
@@ -20,16 +24,17 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
+  # New service to copy bootstrap scripts into the named volume
   bootstrap-init:
     image: alpine:latest
     container_name: bootstrap-init
     restart: "no"
-    # The working_dir is where Portainer checks out the Git repo
+    # Portainer checks out the Git repo to /stack
     working_dir: /stack
     volumes:
       # Mount the bootstrap scripts from the Git checkout (read-only)
       - ./clickhouse_bootstrap:/stack/clickhouse_bootstrap:ro
-      # Mount the named volume we want to copy the scripts TO (writable)
+      # Mount the named volume to copy the scripts TO (writable)
       - bootstrap-scripts:/bootstrap
     # Command to copy the scripts from the git source to the named volume
     command: cp -r /stack/clickhouse_bootstrap/. /bootstrap/
@@ -41,42 +46,42 @@ services:
     hostname: clickhouse-server
     restart: unless-stopped
     ports:
-      - "8123:8123" # HTTP interface
-      - "9000:9000" # Native client interface
+      - "8123:8123"
+      - "9000:9000"
     volumes:
       - ${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse
-      # Mount the bootstrap scripts into the container
-      - ./clickhouse_bootstrap:/clickhouse_bootstrap
+      # Mount the named volume that now contains the bootstrap scripts
+      - bootstrap-scripts:/clickhouse_bootstrap
     networks:
       - monitoring-net
     environment:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      # S3 Credentials - leave these blank to disable S3 storage
       S3_HOST: ${S3_HOST:-}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_PREFIX: ${S3_PREFIX:-}
-      S3_KEY: ${S3_KEY:-}
-      S3_SECRET: ${S3_SECRET:-}
+      KEY: ${KEY:-}
+      SECRET: ${SECRET:-}
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
-    # Override the default entrypoint to run our setup script first
     entrypoint: /clickhouse_bootstrap/entrypoint.sh
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
+    # Make sure clickhouse waits for the scripts to be copied
     depends_on:
-      - bootstrap-init
+      bootstrap-init:
+        condition: service_completed_successfully
 
-  # New service to initialize the database schema and then exit
+  # Gigapipe service in "init" mode
   gigapipe-init:
     image: gigapipe:latest
     container_name: gigapipe-init
-    restart: "no" # Do not restart this container; it's a one-shot task
+    restart: "no"
     networks:
       - monitoring-net
     environment:
@@ -86,7 +91,7 @@ services:
       MODE: "init_only"
     depends_on:
       clickhouse:
-        condition: service_healthy # Wait for ClickHouse to pass its healthcheck
+        condition: service_healthy
 
   # Gigapipe service in "writer" mode
   gigapipe-writer:
@@ -105,7 +110,6 @@ services:
       MODE: "writer"
     depends_on:
       gigapipe-init:
-        # Wait for the init container to complete successfully (exit code 0)
         condition: service_completed_successfully
 
   # Gigapipe service in "reader" mode
@@ -125,8 +129,4 @@ services:
       MODE: "reader"
     depends_on:
       gigapipe-init:
-        # Also wait for the init container to complete successfully
         condition: service_completed_successfully
-
-volumes:
-  grafana-data:
