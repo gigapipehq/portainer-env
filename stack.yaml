@@ -20,6 +20,20 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
+  bootstrap-init:
+    image: alpine:latest
+    container_name: bootstrap-init
+    restart: "no"
+    # The working_dir is where Portainer checks out the Git repo
+    working_dir: /stack
+    volumes:
+      # Mount the bootstrap scripts from the Git checkout (read-only)
+      - ./clickhouse_bootstrap:/stack/clickhouse_bootstrap:ro
+      # Mount the named volume we want to copy the scripts TO (writable)
+      - bootstrap-scripts:/bootstrap
+    # Command to copy the scripts from the git source to the named volume
+    command: cp -r /stack/clickhouse_bootstrap/. /bootstrap/
+
   # ClickHouse database with conditional S3 storage
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -55,6 +69,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    depends_on:
+      - bootstrap-init
 
   # New service to initialize the database schema and then exit
   gigapipe-init:
