@@ -68,7 +68,7 @@ services:
     entrypoint: |
       /bin/bash -c "set -e; exec /entrypoint.sh"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--spider", "-q", "http://clickhouse-server:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
