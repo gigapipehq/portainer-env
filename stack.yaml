@@ -50,8 +50,6 @@ services:
       - "9000:9000"
     volumes:
       - ${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse
-      # Mount the named volume that now contains the bootstrap scripts
-      - bootstrap-scripts:/clickhouse_bootstrap
     networks:
       - monitoring-net
     environment:
@@ -66,7 +64,9 @@ services:
       nofile:
         soft: 262144
         hard: 262144
-    entrypoint: /clickhouse_bootstrap/entrypoint.sh
+    # put a bootstrap script into the yaml file
+    entrypoint: |
+      /bin/bash -c "set -e; exec /entrypoint.sh"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 10s
