@@ -64,7 +64,7 @@
         {
           "name": "S3_HOST",
           "label": "S3 Host",
-          "description": "S3 endpoint host (e.g., s3.amazonaws.com). Leave blank to disable S3 storage.",
+          "description": "S3 endpoint host (e.g., https://s3.amazonaws.com). Leave blank to disable S3 storage.",
           "default": ""
         },
         {
