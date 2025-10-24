@@ -2,7 +2,8 @@ version: "3.8"
 
 volumes:
   grafana-data: {}
-  bootstrap-scripts: {}
+  # You no longer need bootstrap-scripts, but you do need a volume for clickhouse data
+  clickhouse-data: {}
 
 networks:
   monitoring-net:
@@ -24,21 +25,6 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
 
-  # New service to copy bootstrap scripts into the named volume
-  bootstrap-init:
-    image: alpine:latest
-    container_name: bootstrap-init
-    restart: "no"
-    # Portainer checks out the Git repo to /stack
-    working_dir: /stack
-    volumes:
-      # Mount the bootstrap scripts from the Git checkout (read-only)
-      - ./clickhouse_bootstrap:/stack/clickhouse_bootstrap:ro
-      # Mount the named volume to copy the scripts TO (writable)
-      - bootstrap-scripts:/bootstrap
-    # Command to copy the scripts from the git source to the named volume
-    command: cp -r /stack/clickhouse_bootstrap/. /bootstrap/
-
   # ClickHouse database with conditional S3 storage
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -49,7 +35,8 @@ services:
       - "8123:8123"
       - "9000:9000"
     volumes:
-      - ${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse
+      # Use a named volume instead of a host path for clickhouse data
+      - clickhouse-data:/var/lib/clickhouse
     networks:
       - monitoring-net
     environment:
@@ -58,24 +45,79 @@ services:
       S3_HOST: ${S3_HOST:-}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_PREFIX: ${S3_PREFIX:-}
-      KEY: ${KEY:-}
-      SECRET: ${SECRET:-}
+      S3_KEY: ${S3_KEY:-}
+      S3_SECRET: ${S3_SECRET:-}
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
-    # put a bootstrap script into the yaml file
-    entrypoint: |
-      /bin/bash -c "set -e; exec /entrypoint.sh"
+    entrypoint:
+      # This multi-line script runs before the original entrypoint
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        CONFIG_FILE="/etc/clickhouse-server/config.d/storage.xml"
+
+        # Check if S3 environment variables are set and not empty
+        if [ -n "$S3_HOST" ] && [ -n "$S3_BUCKET" ] && [ -n "$S3_KEY" ] && [ -n "$S3_SECRET" ]; then
+            echo "S3 credentials found. Generating S3 storage configuration."
+            
+            # Use a heredoc to create the storage configuration file
+            cat > "$CONFIG_FILE" <<EOF
+        <clickhouse>
+          <storage_configuration>
+            <disks>
+                <default>
+                    <keep_free_space_bytes>21474836480</keep_free_space_bytes>
+                </default>
+                <s3_storage>
+                    <type>s3</type>
+                    <endpoint>https://\${S3_HOST}/\${S3_BUCKET}/\${S3_PREFIX:-}</endpoint>
+                    <access_key_id>\${S3_KEY}</access_key_id>
+                    <secret_access_key>\${S3_SECRET}</secret_access_key>
+                    <metadata_path>/var/lib/clickhouse/s3_metadata/</metadata_path>
+                    <cache_enabled>true</cache_enabled>
+                    <data_cache_enabled>true</data_cache_enabled>
+                    <cache_path>/var/lib/clickhouse/s3_cache/</cache_path>
+                    <max_cache_size>2Gi</max_cache_size>
+                    <thread_pool_size>100</thread_pool_size>
+                </s3_storage>
+            </disks>
+            <policies>
+                <tiered>
+                    <volumes>
+                        <default>
+                            <disk>default</disk>
+                            <volume_priority>1</volume_priority>
+                        </default>
+                        <s3>
+                            <disk>s3_storage</disk>
+                            <prefer_not_to_merge>false</prefer_not_to_merge>
+                            <perform_ttl_move_on_insert>false</perform_ttl_move_on_insert>
+                            <volume_priority>2</volume_priority>
+                        </s3>
+                    </volumes>
+                    <move_factor>0.05</move_factor>
+                </tiered>
+            </policies>
+          </storage_configuration>
+        </clickhouse>
+        EOF
+            echo "Configuration file '$CONFIG_FILE' created."
+        else
+            echo "S3 credentials not found. Skipping S3 storage configuration."
+            rm -f "$CONFIG_FILE"
+        fi
+
+        # Execute the original ClickHouse entrypoint script
+        exec /entrypoint.sh
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://clickhouse-server:8123/ping"]
+      test:
+        ["CMD", "wget", "--spider", "-q", "http://clickhouse-server:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
-    # Make sure clickhouse waits for the scripts to be copied
-    depends_on:
-      bootstrap-init:
-        condition: service_completed_successfully
 
   # Gigapipe service in "init" mode
   gigapipe-init:
@@ -93,9 +135,10 @@ services:
       clickhouse:
         condition: service_healthy
 
-  # Gigapipe service in "writer" mode
+  # Gigapipe writer and reader services (unchanged from your version)
   gigapipe-writer:
     image: ghcr.io/metrico/gigapipe:v4.0.21
+    # ...
     container_name: gigapipe-writer
     hostname: gigapipe-writer
     restart: unless-stopped
@@ -112,9 +155,9 @@ services:
       gigapipe-init:
         condition: service_completed_successfully
 
-  # Gigapipe service in "reader" mode
   gigapipe-reader:
     image: ghcr.io/metrico/gigapipe:v4.0.21
+    # ...
     container_name: gigapipe-reader
     hostname: gigapipe-reader
     restart: unless-stopped
