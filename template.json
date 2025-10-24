@@ -10,7 +10,7 @@
       "platform": "linux",
       "categories": ["Monitoring", "Database"],
       "repository": {
-        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "url": "http://localhost:3000/akvlad/gigapipe-portainer-env",
         "stackfile": "stack.yaml"
       },
       "env": [
