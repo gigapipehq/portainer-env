@@ -79,7 +79,7 @@ services:
 
   # Gigapipe service in "init" mode
   gigapipe-init:
-    image: gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.21
     container_name: gigapipe-init
     restart: "no"
     networks:
@@ -95,7 +95,7 @@ services:
 
   # Gigapipe service in "writer" mode
   gigapipe-writer:
-    image: gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.21
     container_name: gigapipe-writer
     hostname: gigapipe-writer
     restart: unless-stopped
@@ -114,7 +114,7 @@ services:
 
   # Gigapipe service in "reader" mode
   gigapipe-reader:
-    image: gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.21
     container_name: gigapipe-reader
     hostname: gigapipe-reader
     restart: unless-stopped
