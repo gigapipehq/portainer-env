@@ -33,6 +33,12 @@
           "default": "changeme"
         },
         {
+          "name": "CLICKHOUSE_DB",
+          "label": "ClickHouse Database",
+          "description": "The database name to use in ClickHouse.",
+          "default": "cloki"
+        },
+        {
           "name": "GRAFANA_PORT",
           "label": "Grafana Port",
           "description": "Host port to access the Grafana UI.",
@@ -90,6 +96,18 @@
           "label": "S3 Secret Access Key",
           "description": "Your S3 secret access key. Leave blank to disable S3 storage.",
           "default": ""
+        },
+        {
+          "name": "CLICKHOUSE_S3_TTL_DAYS",
+          "label": "ClickHouse S3 TTL Days",
+          "description": "Number of days before data is moved to S3 storage. Set to 0 or leave empty to disable S3 TTL management.",
+          "default": "3"
+        },
+        {
+          "name": "CLICKHOUSE_TTL_DAYS",
+          "label": "ClickHouse TTL Days",
+          "description": "Number of days before data is deleted from ClickHouse.",
+          "default": "7"
         }
       ]
     }
