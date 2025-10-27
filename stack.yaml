@@ -99,7 +99,7 @@ services:
       retries: 3
 
   gigapipe-init:
-    image: ghcr.io/metrico/gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.20
     container_name: gigapipe-init
     restart: "no"
     networks:
@@ -107,11 +107,68 @@ services:
     environment:
       CLICKHOUSE_SERVER: "clickhouse-server"
       CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
       PORT: "9080"
       MODE: "init_only"
     depends_on:
       clickhouse:
         condition: service_healthy
+
+  clickhouse-ttl-init:
+    image: clickhouse/clickhouse-client:latest
+    container_name: clickhouse-ttl-init
+    restart: "no"
+    networks:
+      - monitoring-net
+    environment:
+      CLICKHOUSE_SERVER: "clickhouse-server"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}"
+      CLICKHOUSE_S3_TTL_DAYS: "${CLICKHOUSE_S3_TTL_DAYS}"
+      CLICKHOUSE_TTL_DAYS: "${CLICKHOUSE_TTL_DAYS}"
+      S3_HOST: "${S3_HOST}"
+    depends_on:
+      gigapipe-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "Starting TTL update process..."
+
+        if [ -n "$S3_HOST" ] && [ "${CLICKHOUSE_S3_TTL_DAYS:-0}" -gt 0 ]; then
+            echo "S3 storage is active and TTL is set to $CLICKHOUSE_S3_TTL_DAYS days. Applying TTL MOVE policies..."
+            
+            TABLES_DATE="profiles_series profiles_series_gin profiles_series_keys tempo_traces_attrs_gin tempo_traces_kv time_series time_series_gin"
+            TABLES_NS="metrics_15s profiles samples_v3 tempo_traces"
+            TABLES_10M="patterns"
+
+            for table in $$TABLES_DATE; do
+                echo "Updating $$table..."
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" -q "ALTER TABLE $$table MODIFY SETTING storage_policy = 'tiered';"
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE $$table MODIFY TTL date + toIntervalDay($CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($CLICKHOUSE_TTL_DAYS) DELETE;"
+            done
+            
+            for table in $$TABLES_NS; do
+                echo "Updating $$table..."
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" -q "ALTER TABLE $$table MODIFY SETTING storage_policy = 'tiered';"
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE $$table MODIFY TTL toDateTime(intDiv(timestamp_ns,1000000000)) + toIntervalDay($CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(intDiv(timestamp_ns,1000000000)) + toIntervalDay($CLICKHOUSE_TTL_DAYS) DELETE;"
+            done
+
+            for table in $$TABLES_10M; do
+                echo "Updating $$table..."
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" -q "ALTER TABLE $$table MODIFY SETTING storage_policy = 'tiered';"
+                clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE $$table MODIFY TTL toDateTime(timestamp_10m * 600) + toIntervalDay($CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_10m * 600) + toIntervalDay($CLICKHOUSE_TTL_DAYS) DELETE;"
+            done
+            
+            echo "TTL MOVE policies applied successfully."
+        else
+            echo "S3 storage not configured or CLICKHOUSE_S3_TTL_DAYS is not greater than 0. Skipping TTL update."
+        fi
+
+        echo "TTL update process finished."
 
   gigapipe-writer:
     image: ghcr.io/metrico/gigapipe:v4.0.21
@@ -125,10 +182,11 @@ services:
     environment:
       CLICKHOUSE_SERVER: "clickhouse-server"
       CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
       PORT: "9080"
       MODE: "writer"
     depends_on:
-      gigapipe-init:
+      clickhouse-ttl-init:
         condition: service_completed_successfully
 
   gigapipe-reader:
@@ -143,8 +201,9 @@ services:
     environment:
       CLICKHOUSE_SERVER: "clickhouse-server"
       CLICKHOUSE_AUTH: "${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
       PORT: "9080"
       MODE: "reader"
     depends_on:
-      gigapipe-init:
+      clickhouse-ttl-init:
         condition: service_completed_successfully
