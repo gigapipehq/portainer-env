@@ -1,0 +1,273 @@
+version: "3.8"
+
+networks:
+  qryn-net:
+    driver: bridge
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    container_name: clickhouse-server-qryn
+    hostname: clickhouse-server-qryn
+    restart: unless-stopped
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    volumes:
+      - "${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse"
+    networks:
+      - qryn-net
+    environment:
+      CLICKHOUSE_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      S3_HOST: ${S3_HOST:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_PREFIX: ${S3_PREFIX:-}
+      S3_KEY: ${S3_KEY:-}
+      S3_SECRET: ${S3_SECRET:-}
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p "/etc/clickhouse-server/config.d"
+
+        if [ -n "$$CLICKHOUSE_CLUSTER_NAME" ]; then
+            echo "Cluster name found. Generating single-node cluster configuration."
+            cat > "/etc/clickhouse-server/config.d/cluster.xml" <<EOF
+        <clickhouse>
+            <remote_servers>
+                <$${CLICKHOUSE_CLUSTER_NAME}>
+                    <shard>
+                        <internal_replication>false</internal_replication>
+                        <replica>
+                            <host>clickhouse-server-qryn</host>
+                            <port>9000</port>
+                            <user>$${CLICKHOUSE_USER}</user>
+                            <password>$${CLICKHOUSE_PASSWORD}</password>
+                        </replica>
+                    </shard>
+                </$${CLICKHOUSE_CLUSTER_NAME}>
+            </remote_servers>
+        </clickhouse>
+        EOF
+            echo "Configuration file '/etc/clickhouse-server/config.d/cluster.xml' created."
+        else
+            echo "CLICKHOUSE_CLUSTER_NAME not set. Skipping cluster configuration."
+        fi
+
+        if [ -n "$$S3_HOST" ]; then
+            echo "S3 credentials found. Generating S3 storage configuration."
+            cat > "/etc/clickhouse-server/config.d/storage.xml" <<EOF
+        <clickhouse>
+          <storage_configuration>
+            <disks>
+                <default><keep_free_space_bytes>21474836480</keep_free_space_bytes></default>
+                <s3_storage>
+                    <type>s3</type>
+                    <endpoint>$${S3_HOST}/$${S3_BUCKET}/$${S3_PREFIX:-}</endpoint>
+                    <access_key_id>$${S3_KEY}</access_key_id>
+                    <secret_access_key>$${S3_SECRET}</secret_access_key>
+                    <metadata_path>/var/lib/clickhouse/s3_metadata/</metadata_path>
+                    <cache_enabled>true</cache_enabled>
+                    <data_cache_enabled>true</data_cache_enabled>
+                    <cache_path>/var/lib/clickhouse/s3_cache/</cache_path>
+                    <max_cache_size>2Gi</max_cache_size>
+                    <thread_pool_size>100</thread_pool_size>
+                </s3_storage>
+            </disks>
+            <policies>
+                <tiered>
+                    <volumes>
+                        <default><disk>default</disk><volume_priority>1</volume_priority></default>
+                        <s3><disk>s3_storage</disk><prefer_not_to_merge>false</prefer_not_to_merge><perform_ttl_move_on_insert>false</perform_ttl_move_on_insert><volume_priority>2</volume_priority></s3>
+                    </volumes>
+                    <move_factor>0.05</move_factor>
+                </tiered>
+            </policies>
+          </storage_configuration>
+        </clickhouse>
+        EOF
+            echo "Configuration file '/etc/clickhouse-server/config.d/storage.xml' created."
+        else
+            echo "S3 credentials not found or incomplete. Skipping S3 storage configuration."
+            rm -f "/etc/clickhouse-server/config.d/storage.xml"
+        fi
+        exec /entrypoint.sh
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://clickhouse-server-qryn:8123/ping",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  qryn-ctrl:
+    image: qryn-ctrl:latest
+    container_name: qryn-ctrl
+    restart: "no"
+    networks:
+      - qryn-net
+    environment:
+      QRYN_DATABASE_DATA_0_HOST: "clickhouse-server-qryn"
+      QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
+      QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command:
+      - "/qryn-ctrl"
+      - "--initialize_db"
+      - "--project"
+      - "qryn"
+
+  clickhouse-ttl-init:
+    image: clickhouse/clickhouse-client:latest
+    container_name: clickhouse-ttl-init
+    restart: "no"
+    networks:
+      - qryn-net
+    environment:
+      CLICKHOUSE_SERVER: "clickhouse-server-qryn"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}"
+      CLICKHOUSE_S3_TTL_DAYS: "${CLICKHOUSE_S3_TTL_DAYS}"
+      CLICKHOUSE_TTL_DAYS: "${CLICKHOUSE_TTL_DAYS}"
+      S3_HOST: "${S3_HOST}"
+    depends_on:
+      qryn-ctrl:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "Starting TTL update process..."
+
+        if [ -n "$$S3_HOST" ] && [ "$${CLICKHOUSE_S3_TTL_DAYS:-0}" -gt 0 ]; then
+            echo "S3 storage is active and TTL is set to $$CLICKHOUSE_S3_TTL_DAYS days. Applying TTL MOVE policies..."
+
+            echo "Updating table: metrics_15s_v2"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE metrics_15s_v2 MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE metrics_15s_v2 MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: patterns"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE patterns MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE patterns MODIFY TTL toDate(fromUnixTimestamp(timestamp_10m * 600)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDate(fromUnixTimestamp(timestamp_10m * 600)) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: profiles"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: profiles_series"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: profiles_series_gin"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series_gin MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: profiles_series_keys"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series_keys MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_keys MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: qryn_fingerprints_history"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE qryn_fingerprints_history MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE qryn_fingerprints_history MODIFY TTL time + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', time + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: samples_count"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_count MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_count MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: samples_count_v2"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_count_v2 MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_count_v2 MODIFY TTL hour + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', hour + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: samples_kv"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_kv MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: samples_v4"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_v4 MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_v4 MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: tempo_traces"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: tempo_traces_attrs_gin"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces_attrs_gin MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_attrs_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: tempo_traces_kv"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces_kv MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: time_series_gin_v2"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE time_series_gin_v2 MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_gin_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "Updating table: time_series_v2"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE time_series_v2 MODIFY SETTING storage_policy = 'tiered';"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+
+            echo "TTL MOVE policies applied successfully."
+        else
+            echo "S3 storage not configured or CLICKHOUSE_S3_TTL_DAYS not set. Skipping TTL update."
+        fi
+        echo "TTL update process finished."
+
+  cloki-writer:
+    image: cloki-writer:latest
+    container_name: cloki-writer
+    restart: unless-stopped
+    ports:
+      - "${WRITER_PORT}:3100"
+    networks:
+      - qryn-net
+    environment:
+      QRYN_DATABASE_DATA_0_HOST: "clickhouse-server-qryn"
+      QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
+      QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
+      QRYN_DATABASE_DATA_0_TTL_DAYS: ${CLICKHOUSE_TTL_DAYS}
+      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
+      QRYN_SYSTEM_SETTINGS_DB_TIMER: ${DB_TIMER_SECONDS}
+      QRYN_DRILLDOWN_SETTINGS_LOG_DRILLDOWN: ${LOG_DRILLDOWN_ENABLED}
+      QRYN_DATABASE_DATA_0_INSECURE_SKIP_VERIFY: ${INSECURE_SKIP_VERIFY}
+      QRYN_DATABASE_DATA_0_SECURE: ${DB_SECURE}
+    depends_on:
+      clickhouse-ttl-init:
+        condition: service_completed_successfully
+
+  cloki-reader:
+    image: cloki-reader:latest
+    container_name: cloki-reader
+    restart: unless-stopped
+    ports:
+      - "${READER_PORT}:3100"
+    networks:
+      - qryn-net
+    environment:
+      QRYN_DATABASE_DATA_0_HOST: "clickhouse-server-qryn"
+      QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
+      QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
+      QRYN_DATABASE_DATA_0_TTL_DAYS: ${CLICKHOUSE_TTL_DAYS}
+      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
+      QRYN_SYSTEM_SETTINGS_DB_TIMER: ${DB_TIMER_SECONDS}
+      QRYN_DRILLDOWN_SETTINGS_LOG_DRILLDOWN: ${LOG_DRILLDOWN_ENABLED}
+      QRYN_DATABASE_DATA_0_INSECURE_SKIP_VERIFY: ${INSECURE_SKIP_VERIFY}
+      QRYN_DATABASE_DATA_0_SECURE: ${DB_SECURE}
+    depends_on:
+      clickhouse-ttl-init:
+        condition: service_completed_successfully
