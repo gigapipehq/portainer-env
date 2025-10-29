@@ -36,12 +36,6 @@
           "default": "cloki_data"
         },
         {
-          "name": "CLICKHOUSE_CLUSTER_NAME",
-          "label": "ClickHouse Cluster Name",
-          "description": "The name of the ClickHouse cluster for qryn services.",
-          "default": "cloki_cluster"
-        },
-        {
           "name": "WRITER_PORT",
           "label": "cloki Writer Port",
           "description": "Host port for the cloki writer service.",

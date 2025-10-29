@@ -18,7 +18,6 @@ services:
     networks:
       - qryn-net
     environment:
-      CLICKHOUSE_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       S3_HOST: ${S3_HOST:-}
@@ -36,30 +35,6 @@ services:
       - |
         set -e
         mkdir -p "/etc/clickhouse-server/config.d"
-
-        if [ -n "$$CLICKHOUSE_CLUSTER_NAME" ]; then
-            echo "Cluster name found. Generating single-node cluster configuration."
-            cat > "/etc/clickhouse-server/config.d/cluster.xml" <<EOF
-        <clickhouse>
-            <remote_servers>
-                <$${CLICKHOUSE_CLUSTER_NAME}>
-                    <shard>
-                        <internal_replication>false</internal_replication>
-                        <replica>
-                            <host>clickhouse-server-qryn</host>
-                            <port>9000</port>
-                            <user>$${CLICKHOUSE_USER}</user>
-                            <password>$${CLICKHOUSE_PASSWORD}</password>
-                        </replica>
-                    </shard>
-                </$${CLICKHOUSE_CLUSTER_NAME}>
-            </remote_servers>
-        </clickhouse>
-        EOF
-            echo "Configuration file '/etc/clickhouse-server/config.d/cluster.xml' created."
-        else
-            echo "CLICKHOUSE_CLUSTER_NAME not set. Skipping cluster configuration."
-        fi
 
         if [ -n "$$S3_HOST" ]; then
             echo "S3 credentials found. Generating S3 storage configuration."
@@ -233,7 +208,7 @@ services:
     container_name: cloki-writer
     restart: unless-stopped
     ports:
-      - "${WRITER_PORT}:3100"
+      - "${WRITER_PORT}:80"
     networks:
       - qryn-net
     environment:
@@ -241,11 +216,14 @@ services:
       QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
       QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
       QRYN_DATABASE_DATA_0_TTL_DAYS: ${CLICKHOUSE_TTL_DAYS}
-      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
+      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ""
       QRYN_SYSTEM_SETTINGS_DB_TIMER: ${DB_TIMER_SECONDS}
       QRYN_DRILLDOWN_SETTINGS_LOG_DRILLDOWN: ${LOG_DRILLDOWN_ENABLED}
       QRYN_DATABASE_DATA_0_INSECURE_SKIP_VERIFY: ${INSECURE_SKIP_VERIFY}
       QRYN_DATABASE_DATA_0_SECURE: ${DB_SECURE}
+      QRYN_LOG_SETTINGS_STDOUT: true
+      QRYN_HTTP_SETTINGS_PORT: 80
+
     depends_on:
       clickhouse-ttl-init:
         condition: service_completed_successfully
@@ -255,7 +233,7 @@ services:
     container_name: cloki-reader
     restart: unless-stopped
     ports:
-      - "${READER_PORT}:3100"
+      - "${READER_PORT}:80"
     networks:
       - qryn-net
     environment:
@@ -263,11 +241,13 @@ services:
       QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
       QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
       QRYN_DATABASE_DATA_0_TTL_DAYS: ${CLICKHOUSE_TTL_DAYS}
-      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ${CLICKHOUSE_CLUSTER_NAME}
+      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ""
       QRYN_SYSTEM_SETTINGS_DB_TIMER: ${DB_TIMER_SECONDS}
       QRYN_DRILLDOWN_SETTINGS_LOG_DRILLDOWN: ${LOG_DRILLDOWN_ENABLED}
       QRYN_DATABASE_DATA_0_INSECURE_SKIP_VERIFY: ${INSECURE_SKIP_VERIFY}
       QRYN_DATABASE_DATA_0_SECURE: ${DB_SECURE}
+      QRYN_LOG_SETTINGS_STDOUT: true
+      QRYN_HTTP_SETTINGS_PORT: 80
     depends_on:
       clickhouse-ttl-init:
         condition: service_completed_successfully
