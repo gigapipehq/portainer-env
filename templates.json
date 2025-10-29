@@ -15,6 +15,12 @@
       },
       "env": [
         {
+          "name": "QRYNCLOUD_LICENSE",
+          "label": "QRYN Cloud License Key",
+          "description": "License key for QRYN Cloud services.",
+          "default": ""
+        },
+        {
           "name": "CLICKHOUSE_DATA_PATH",
           "label": "ClickHouse Data Path",
           "description": "Absolute path on the host to store ClickHouse data.",
