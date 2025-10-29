@@ -79,7 +79,7 @@ services:
       retries: 3
 
   gigapipe-init:
-    image: ghcr.io/metrico/gigapipe:v4.0.20
+    image: ghcr.io/metrico/gigapipe:v4.0.23
     container_name: gigapipe-init
     restart: "no"
     networks:
@@ -158,7 +158,7 @@ services:
         echo "TTL update process finished."
 
   gigapipe-writer:
-    image: ghcr.io/metrico/gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.23
     container_name: gigapipe-writer
     hostname: gigapipe-writer
     restart: unless-stopped
@@ -184,7 +184,7 @@ services:
         condition: service_completed_successfully
 
   gigapipe-reader:
-    image: ghcr.io/metrico/gigapipe:v4.0.21
+    image: ghcr.io/metrico/gigapipe:v4.0.23
     container_name: gigapipe-reader
     hostname: gigapipe-reader
     restart: unless-stopped
