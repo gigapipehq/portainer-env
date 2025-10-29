@@ -1,0 +1,218 @@
+{
+  "version": "2",
+  "templates": [
+    {
+      "type": 3,
+      "title": "Gigapipe Commercial Monitoring Stack",
+      "description": "A monitoring stack with ClickHouse and Gigapipe reader/writer services. Includes optional tiered storage to S3.",
+      "name": "commercial-stack",
+      "logo": "https://raw.githubusercontent.com/portainer/templates/master/logos/grafana.png",
+      "platform": "linux",
+      "categories": ["Monitoring", "Logging", "Database"],
+      "repository": {
+        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "stackfile": "stacks/commercial.yaml"
+      },
+      "env": [
+        {
+          "name": "CLICKHOUSE_DATA_PATH",
+          "label": "ClickHouse Data Path",
+          "description": "Absolute path on the host to store ClickHouse data.",
+          "default": "/var/data/clickhouse-qryn"
+        },
+        {
+          "name": "CLICKHOUSE_USER",
+          "label": "ClickHouse User",
+          "default": "default"
+        },
+        {
+          "name": "CLICKHOUSE_PASSWORD",
+          "label": "ClickHouse Password",
+          "default": "changeme"
+        },
+        {
+          "name": "CLICKHOUSE_DB",
+          "label": "ClickHouse Database Name",
+          "default": "cloki_data"
+        },
+        {
+          "name": "CLICKHOUSE_CLUSTER_NAME",
+          "label": "ClickHouse Cluster Name",
+          "description": "The name of the ClickHouse cluster for qryn services.",
+          "default": "cloki_cluster"
+        },
+        {
+          "name": "WRITER_PORT",
+          "label": "cloki Writer Port",
+          "description": "Host port for the cloki writer service.",
+          "default": "3101"
+        },
+        {
+          "name": "READER_PORT",
+          "label": "cloki Reader Port",
+          "description": "Host port for the cloki reader service.",
+          "default": "3100"
+        },
+        {
+          "name": "CLICKHOUSE_TTL_DAYS",
+          "label": "Data Deletion TTL (Days)",
+          "description": "Number of days before data is permanently deleted from all storage.",
+          "default": "7"
+        },
+        {
+          "name": "DB_TIMER_SECONDS",
+          "label": "System Settings DB Timer (Seconds)",
+          "description": "Timer in seconds for cloki services to update system settings.",
+          "default": "15"
+        },
+        {
+          "name": "LOG_DRILLDOWN_ENABLED",
+          "label": "Enable Log Drilldown",
+          "description": "Set to 'true' or 'false' to enable/disable log drilldown features.",
+          "default": "true"
+        },
+        {
+          "name": "INSECURE_SKIP_VERIFY",
+          "label": "DB Insecure Skip Verify",
+          "description": "Set to 'true' to skip TLS certificate verification for the database connection.",
+          "default": "true"
+        },
+        {
+          "name": "DB_SECURE",
+          "label": "DB Secure Connection",
+          "description": "Set to 'true' to use a secure (TLS) connection to the database.",
+          "default": "false"
+        },
+        {
+          "name": "S3_HOST",
+          "label": "S3 Host",
+          "description": "S3 endpoint (e.g., http://minio:9000). Leave blank to disable S3.",
+          "default": ""
+        },
+        {
+          "name": "S3_BUCKET",
+          "label": "S3 Bucket",
+          "description": "S3 bucket name. Required if S3_HOST is set.",
+          "default": ""
+        },
+        {
+          "name": "S3_PREFIX",
+          "label": "S3 Prefix (Optional)",
+          "description": "Optional prefix (folder) within the S3 bucket.",
+          "default": ""
+        },
+        {
+          "name": "S3_KEY",
+          "label": "S3 Access Key ID",
+          "description": "Your S3 access key. Required if S3_HOST is set.",
+          "default": ""
+        },
+        {
+          "name": "S3_SECRET",
+          "label": "S3 Secret Access Key",
+          "description": "Your S3 secret key. Required if S3_HOST is set.",
+          "default": ""
+        },
+        {
+          "name": "CLICKHOUSE_S3_TTL_DAYS",
+          "label": "S3 Move TTL (Days)",
+          "description": "Days before data is moved to S3. Set to 0 or leave blank to disable.",
+          "default": "3"
+        }
+      ]
+    },
+    {
+      "type": 3,
+      "title": "Gigapipe OSS Monitoring Stack",
+      "description": "A monitoring stack with ClickHouse and Gigapipe reader/writer services. Includes optional tiered storage to S3.",
+      "name": "oss-stack",
+      "logo": "https://raw.githubusercontent.com/portainer/templates/master/logos/grafana.png",
+      "platform": "linux",
+      "categories": ["Monitoring", "Logging", "Database"],
+      "repository": {
+        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "stackfile": "stacks/oss.yaml"
+      },
+      "env": [
+        {
+          "name": "CLICKHOUSE_DATA_PATH",
+          "label": "ClickHouse Data Path",
+          "description": "Absolute path on the host to store ClickHouse data.",
+          "default": "/var/data/clickhouse"
+        },
+        {
+          "name": "CLICKHOUSE_USER",
+          "label": "ClickHouse User",
+          "description": "The username for the ClickHouse database. This should almost always be 'default'.",
+          "default": "default"
+        },
+        {
+          "name": "CLICKHOUSE_PASSWORD",
+          "label": "ClickHouse Password",
+          "description": "The password for the ClickHouse user. Change this to a secure password.",
+          "default": "changeme"
+        },
+        {
+          "name": "CLICKHOUSE_DB",
+          "label": "ClickHouse Database",
+          "description": "The database name to use in ClickHouse.",
+          "default": "cloki"
+        },
+        {
+          "name": "WRITER_PORT",
+          "label": "Gigapipe Writer Port",
+          "description": "Host port for the Gigapipe writer service.",
+          "default": "3103"
+        },
+        {
+          "name": "READER_PORT",
+          "label": "Gigapipe Reader Port",
+          "description": "Host port for the Gigapipe reader service.",
+          "default": "3102"
+        },
+        {
+          "name": "S3_HOST",
+          "label": "S3 Host",
+          "description": "S3 endpoint host (e.g., https://s3.amazonaws.com). Leave blank to disable S3 storage.",
+          "default": ""
+        },
+        {
+          "name": "S3_BUCKET",
+          "label": "S3 Bucket",
+          "description": "S3 bucket name. Leave blank to disable S3 storage.",
+          "default": ""
+        },
+        {
+          "name": "S3_PREFIX",
+          "label": "S3 Prefix (Optional)",
+          "description": "Optional prefix (folder) within the S3 bucket.",
+          "default": ""
+        },
+        {
+          "name": "S3_KEY",
+          "label": "S3 Access Key ID",
+          "description": "Your S3 access key ID. Leave blank to disable S3 storage.",
+          "default": ""
+        },
+        {
+          "name": "S3_SECRET",
+          "label": "S3 Secret Access Key",
+          "description": "Your S3 secret access key. Leave blank to disable S3 storage.",
+          "default": ""
+        },
+        {
+          "name": "CLICKHOUSE_S3_TTL_DAYS",
+          "label": "ClickHouse S3 TTL Days",
+          "description": "Number of days before data is moved to S3 storage. Set to 0 or leave empty to disable S3 TTL management.",
+          "default": "3"
+        },
+        {
+          "name": "CLICKHOUSE_TTL_DAYS",
+          "label": "ClickHouse TTL Days",
+          "description": "Number of days before data is deleted from ClickHouse.",
+          "default": "7"
+        }
+      ]
+    }
+  ]
+}
