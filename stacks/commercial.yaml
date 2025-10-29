@@ -97,6 +97,12 @@ services:
       QRYN_DATABASE_DATA_0_HOST: "clickhouse-server-qryn"
       QRYN_DATABASE_DATA_0_USER: ${CLICKHOUSE_USER}
       QRYN_DATABASE_DATA_0_PASS: ${CLICKHOUSE_PASSWORD}
+      QRYN_DATABASE_DATA_0_TTL_DAYS: ${CLICKHOUSE_TTL_DAYS}
+      QRYN_DATABASE_DATA_0_CLUSTER_NAME: ""
+      QRYN_SYSTEM_SETTINGS_DB_TIMER: ${DB_TIMER_SECONDS}
+      QRYN_DRILLDOWN_SETTINGS_LOG_DRILLDOWN: ${LOG_DRILLDOWN_ENABLED}
+      QRYN_DATABASE_DATA_0_INSECURE_SKIP_VERIFY: ${INSECURE_SKIP_VERIFY}
+      QRYN_DATABASE_DATA_0_SECURE: ${DB_SECURE}
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -135,31 +141,23 @@ services:
 
             echo "Updating table: metrics_15s_v2"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE metrics_15s_v2 MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE metrics_15s_v2 MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
-
-            echo "Updating table: patterns"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE patterns MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE patterns MODIFY TTL toDate(fromUnixTimestamp(timestamp_10m * 600)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDate(fromUnixTimestamp(timestamp_10m * 600)) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE metrics_15s_v2 MODIFY TTL toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days)) DELETE;"
 
             echo "Updating table: profiles"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles MODIFY TTL toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: profiles_series"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: profiles_series_gin"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series_gin MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: profiles_series_keys"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE profiles_series_keys MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_keys MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
-
-            echo "Updating table: qryn_fingerprints_history"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE qryn_fingerprints_history MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE qryn_fingerprints_history MODIFY TTL time + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', time + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE profiles_series_keys MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: samples_count"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_count MODIFY SETTING storage_policy = 'tiered';"
@@ -167,35 +165,35 @@ services:
 
             echo "Updating table: samples_count_v2"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_count_v2 MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_count_v2 MODIFY TTL hour + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', hour + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_count_v2 MODIFY TTL hour + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', hour + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days)) DELETE;"
 
             echo "Updating table: samples_kv"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_kv MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: samples_v4"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE samples_v4 MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_v4 MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE samples_v4 MODIFY TTL toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days)) DELETE;"
 
             echo "Updating table: tempo_traces"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces MODIFY TTL toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(timestamp_ns / 1000000000) + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces MODIFY TTL toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', toDateTime(intDiv(timestamp_ns, 1000000000)) + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: tempo_traces_attrs_gin"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces_attrs_gin MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_attrs_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_attrs_gin MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: tempo_traces_kv"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE tempo_traces_kv MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE tempo_traces_kv MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: time_series_gin_v2"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE time_series_gin_v2 MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_gin_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_gin_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "Updating table: time_series_v2"
             clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" -q "ALTER TABLE time_series_v2 MODIFY SETTING storage_policy = 'tiered';"
-            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay($$CLICKHOUSE_TTL_DAYS) DELETE;"
+            clickhouse-client --host "$$CLICKHOUSE_SERVER" --user "$$CLICKHOUSE_USER" --password "$$CLICKHOUSE_PASSWORD" --database "$$CLICKHOUSE_DB" --materialize_ttl_after_modify=0 -q "ALTER TABLE time_series_v2 MODIFY TTL date + toIntervalDay($$CLICKHOUSE_S3_TTL_DAYS) TO VOLUME 's3', date + toIntervalDay(if(ttl_days = 0, $$CLICKHOUSE_TTL_DAYS, ttl_days) + 1) DELETE;"
 
             echo "TTL MOVE policies applied successfully."
         else
