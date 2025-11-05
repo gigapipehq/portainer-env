@@ -88,7 +88,7 @@ services:
       retries: 3
 
   qryn-ctrl:
-    image: qryn-ctrl:latest
+    image: ${QRYN_CTRL_VERSION:-qryn-ctrl:latest}
     container_name: qryn-ctrl
     restart: "no"
     networks:
@@ -202,9 +202,9 @@ services:
         fi
         echo "TTL update process finished."
 
-  cloki-writer:
-    image: cloki-writer:latest
-    container_name: cloki-writer
+  qryn-writer:
+    image: ${QRYN_WRITER_VERSION:-qryn-writer:latest}
+    container_name: qryn-writer
     restart: unless-stopped
     ports:
       - "${WRITER_PORT}:80"
@@ -229,9 +229,9 @@ services:
       clickhouse-ttl-init:
         condition: service_completed_successfully
 
-  cloki-reader:
-    image: cloki-reader:latest
-    container_name: cloki-reader
+  qryn-reader:
+    image: ${QRYN_READER_VERSION:-qryn-reader:latest}
+    container_name: qryn-reader
     restart: unless-stopped
     ports:
       - "${READER_PORT}:80"

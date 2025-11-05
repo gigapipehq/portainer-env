@@ -15,6 +15,24 @@
       },
       "env": [
         {
+          "name": "QRYN_CTRL_VERSION",
+          "label": "Qryn-ctrl image name",
+          "description": "Qryn-ctrl image name.",
+          "default": ""
+        },
+        {
+          "name": "QRYN_READER_VERSION",
+          "label": "Qryn-reader image name",
+          "description": "Qryn-reader image name.",
+          "default": ""
+        },
+        {
+          "name": "QRYN_WRITER_VERSION",
+          "label": "Qryn-writer image name",
+          "description": "Qryn-writer image name.",
+          "default": ""
+        },
+        {
           "name": "QRYNCLOUD_LICENSE",
           "label": "QRYN Cloud License Key",
           "description": "License key for QRYN Cloud services.",
