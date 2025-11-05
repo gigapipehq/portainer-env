@@ -10,7 +10,7 @@
       "platform": "linux",
       "categories": ["Monitoring", "Logging", "Database"],
       "repository": {
-        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "url": "https://github.com/gigapipehq/portainer-env.git",
         "stackfile": "stacks/commercial.yaml"
       },
       "env": [
@@ -130,7 +130,7 @@
       "platform": "linux",
       "categories": ["Monitoring", "Logging", "Database"],
       "repository": {
-        "url": "http://host.docker.internal:3000/akvlad/gigapipe-portainer-env",
+        "url": "https://github.com/gigapipehq/portainer-env.git",
         "stackfile": "stacks/oss.yaml"
       },
       "env": [
