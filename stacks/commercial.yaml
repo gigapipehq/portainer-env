@@ -10,9 +10,6 @@ services:
     container_name: clickhouse-server-qryn
     hostname: clickhouse-server-qryn
     restart: unless-stopped
-    ports:
-      - "8124:8123"
-      - "9001:9000"
     volumes:
       - "${CLICKHOUSE_DATA_PATH}:/var/lib/clickhouse"
     networks:
